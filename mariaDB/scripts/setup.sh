@@ -78,6 +78,5 @@ sleep 5
 
 echo "Stopping temporary MariaDB instance..."
 service mariadb stop
-
 echo "Launching MariaDB daemon..."
 exec "$@"
