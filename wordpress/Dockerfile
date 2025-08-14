@@ -9,6 +9,7 @@ RUN apt update && \
     ca-certificates\
     php7.4-fpm \
     php7.4-mysql \
+    mariadb-client \
     wget \
     tar && \
     rm -rf /var/lib/apt/lists/*

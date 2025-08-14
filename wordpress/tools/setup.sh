@@ -2,6 +2,8 @@
 set -e
 
 echo "Setting up WordPress..."
+echo "DB_HOST=${DB_HOST} DB_NAME=${DB_NAME} DB_USER=${DB_USER}"
+
 
 chown -R www-data:www-data /var/www/inception/
 
@@ -11,39 +13,52 @@ fi
 
 echo "Waiting for database..."
 
-sleep 10
+# Test database connection instead of just sleeping
+for i in {1..30}; do
+    if mysql -h${DB_HOST:-mariadb} -u${DB_USER:-mrizakov} -p${DB_PASSWORD:-dockerftw} -e "SELECT 1;" ; then
+        echo "Database connection successful!"
+        break
+    fi
+    echo "Attempt $i/30: Database not ready, waiting..."
+    sleep 2
+done
+
+cd /var/www/inception
 
 echo "Downloading WordPress core..."
 
-wp --allow-root --path="/var/www/inception/" core download || true
+wp --allow-root core download || true
 
-if ! wp --allow-root --path="/var/www/inception/" core is-installed;
+if ! wp --allow-root core is-installed;
 then
     echo "Installing WordPress core..."
-    wp  --allow-root --path="/var/www/inception/" core install \
-        --url=$WP_URL \
-        --title=$WP_TITLE \
-        --admin_user=$WP_ADMIN_USER \
-        --admin_password=$WP_ADMIN_PASSWORD \
-        --admin_email=$WP_ADMIN_EMAIL
-        echo "WordPress installed successfully!"
+    wp --allow-root core install \
+        --url="${WP_URL:-http://localhost:9000}" \
+        --title="${WP_TITLE:-Inception WordPress}" \
+        --admin_user="${WP_ADMIN_USER:-admin}" \
+        --admin_password="${WP_ADMIN_PASSWORD:-admin123}" \
+        --admin_email="${WP_ADMIN_EMAIL:-admin@example.com}"
+    echo "WordPress installed successfully!"
 else
     echo "WordPress is already installed."
 fi;
-# Create non-admin user
-if ! wp --allow-root --path="/var/www/inception/" user get $WP_USER;
-then
-    wp  --allow-root --path="/var/www/inception/" user create \
-        $WP_USER \
-        $WP_EMAIL \
-        --user_pass=$WP_PASSWORD \
-        --role=$WP_ROLE
-fi;
+# Create additional user only if variables are set
+if [ -n "${WP_USER}" ] && [ -n "${WP_EMAIL}" ] && [ -n "${WP_PASSWORD}" ]; then
+    if ! wp --allow-root user get "${WP_USER}" >/dev/null 2>&1; then
+        wp --allow-root user create \
+            "${WP_USER}" "${WP_EMAIL}" \
+            --user_pass="${WP_PASSWORD}" \
+            --role="${WP_ROLE:-editor}"
+        echo "Additional user '${WP_USER}' created successfully!"
+    else
+        echo "User '${WP_USER}' already exists."
+    fi
+fi
 
 chown -R www-data:www-data /var/www/inception/
 
 
 # Download a new theme and activate it
-wp --allow-root --path="/var/www/inception/" theme install raft --activate 
+wp --allow-root theme install raft --activate || echo "Theme installation failed or skipped"
 # Start php server in foreground
 exec $@

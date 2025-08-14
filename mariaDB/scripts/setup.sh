@@ -67,6 +67,43 @@ wait_for_mysql() {
 #===============================================================================
 # SETUP FUNCTIONS
 #===============================================================================
+ensure_user_privileges() {
+    log_section "Ensuring user privileges"
+    
+    # Start MariaDB temporarily to fix users
+    mysqld_safe \
+        --user=mysql \
+        --datadir="$MYSQL_DATA_DIR" \
+        --socket="$MYSQL_SOCKET" \
+        --skip-networking &
+    
+    wait_for_mysql
+    
+    # Ensure user exists with correct permissions
+    mysql -S "$MYSQL_SOCKET" -u root -p"$DB_PASS_ROOT" <<EOF
+-- Create application database
+CREATE DATABASE IF NOT EXISTS \`$DB_NAME\`;
+
+-- Remove any existing user with wrong host
+DROP USER IF EXISTS '$DB_USER'@'localhost';
+DROP USER IF EXISTS '$DB_USER'@'127.0.0.1';
+
+-- Create user with wildcard host
+CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'%';
+
+-- Ensure root can connect from anywhere
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '$DB_PASS_ROOT';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+
+FLUSH PRIVILEGES;
+EOF
+    
+    # Stop the temporary instance
+    mysqladmin -S "$MYSQL_SOCKET" -u root -p"$DB_PASS_ROOT" shutdown
+    
+    log "✓ Database '$DB_NAME' and user privileges ensured"
+}
 
 setup_directories() {
     log_section "Setting up directories"
@@ -190,6 +227,7 @@ main() {
         log "✓ Database initialization and configuration completed"
     else
         log "✓ Using existing database configuration"
+        ensure_user_privileges
     fi
     
     # Start production server
